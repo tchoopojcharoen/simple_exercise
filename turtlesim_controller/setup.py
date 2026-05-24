@@ -25,7 +25,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'exec_name = folder_name.file_name:main',
+            'go_to_goal = turtlesim_controller.go_to_goal:main',
         ],
     },
 )

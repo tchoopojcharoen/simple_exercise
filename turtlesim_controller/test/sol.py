@@ -42,11 +42,7 @@ class GoToGoalNode(Node):
         """
 
         self.pose = [msg.x, msg.y, msg.theta]
-        ################## MODIFY THE CODE HERE ##################
-        msg.x
-        msg.y
-        msg.theta
-        ################## END OF MODIFICATION ##################
+
     def goal_callback(self, msg: Point):
         """
         Callback function for the goal subscriber.
@@ -54,10 +50,7 @@ class GoToGoalNode(Node):
         This function is called every time a new Point message is received.
         """
 
-        ################## MODIFY THE CODE HERE ##################
-        msg.x
-        msg.y
-        ################## END OF MODIFICATION ##################
+        self.goal = [msg.x, msg.y]
 
     def timer_callback(self):
         """
@@ -73,13 +66,20 @@ class GoToGoalNode(Node):
         Kw = self.get_parameter('Kw').value
         tolerance = self.get_parameter('tolerance').value
 
-        ################## MODIFY THE CODE HERE ##################
-        v, w = 
+        v, w = compute_go_to_goal_control(
+            self.pose,
+            self.goal,
+            Kv,
+            Kw,
+            tolerance
+        )
+
         msg = Twist()
-        
+        msg.linear.x = v
+        msg.angular.z = w
+
         self.cmd_vel_pub.publish(msg)
-        ################## END OF MODIFICATION ##################
-        
+
 
 def main(args=None):
     rclpy.init(args=args)
