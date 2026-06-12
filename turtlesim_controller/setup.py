@@ -1,4 +1,6 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'turtlesim_controller'
 
@@ -15,6 +17,7 @@ setup(
             'share/' + package_name,
             ['package.xml']
         ),
+         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*')))
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -25,7 +28,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'go_to_goal = turtlesim_controller.go_to_goal:main',
+            'go_to_goal_controller = turtlesim_controller.go_to_goal:main',
+            'goal_point_publisher = turtlesim_controller.goal_point_publisher_node:main',
         ],
     },
 )

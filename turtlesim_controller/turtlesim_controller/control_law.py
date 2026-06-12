@@ -28,11 +28,6 @@ def compute_go_to_goal_control(
         Angular velocity gain.
         A larger Kw makes the robot turn faster toward the goal direction.
 
-    tolerance : float
-        Distance threshold for stopping.
-        If the robot is closer than this distance to the goal,
-        the function returns zero velocity.
-
     Returns
     -------
     v : float
@@ -40,6 +35,9 @@ def compute_go_to_goal_control(
 
     w : float
         Angular velocity command.
+
+    d : float
+        Distance between the current position and the goal
     """
 
     # Start with zero velocity.
@@ -47,42 +45,37 @@ def compute_go_to_goal_control(
     v = 0.0
     w = 0.0
 
-    # Only compute control input if both current pose and goal are available.
-    if pose is not None and goal is not None:
+    # Compute the difference between the goal position and current position.
+    # pos_diff[0] is the x-direction error.
+    # pos_diff[1] is the y-direction error.
+    pos_diff = [
+        goal[i] - pose[i]
+        for i in range(2)
+    ]
 
-        # Compute the difference between the goal position and current position.
-        # pos_diff[0] is the x-direction error.
-        # pos_diff[1] is the y-direction error.
-        pos_diff = [
-            goal[i] - pose[i]
-            for i in range(2)
-        ]
+    # Compute the Euclidean distance from the robot to the goal.
+    d = math.sqrt(pos_diff[0] ** 2 + pos_diff[1] ** 2)
 
-        # Compute the Euclidean distance from the robot to the goal.
-        d = math.sqrt(pos_diff[0] ** 2 + pos_diff[1] ** 2)
+    # If the robot is already close enough to the goal,
+    # keep both velocity commands at zero.
+    # Linear velocity is proportional to distance from the goal.
+    v = Kv * d
 
-        # If the robot is already close enough to the goal,
-        # keep both velocity commands at zero.
-        if d > tolerance:
+    # Compute the direction angle from the robot to the goal.
+    desired_angle = math.atan2(pos_diff[1], pos_diff[0])
 
-            # Linear velocity is proportional to distance from the goal.
-            v = Kv * d
+    # Compute heading error between desired direction and current heading.
+    angle_error = desired_angle - pose[2]
 
-            # Compute the direction angle from the robot to the goal.
-            desired_angle = math.atan2(pos_diff[1], pos_diff[0])
+    # Wrap the angle error to the range [-pi, pi].
+    # This makes the robot turn through the shortest direction.
+    angle_error = math.atan2(
+        math.sin(angle_error),
+        math.cos(angle_error)
+    )
 
-            # Compute heading error between desired direction and current heading.
-            angle_error = desired_angle - pose[2]
+    # Angular velocity is proportional to heading error.
+    w = Kw * angle_error
 
-            # Wrap the angle error to the range [-pi, pi].
-            # This makes the robot turn through the shortest direction.
-            angle_error = math.atan2(
-                math.sin(angle_error),
-                math.cos(angle_error)
-            )
-
-            # Angular velocity is proportional to heading error.
-            w = Kw * angle_error
-
-    return v, w
+    return v, w, d
 
