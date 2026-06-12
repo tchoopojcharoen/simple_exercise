@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QVBoxLayout,
@@ -58,6 +59,9 @@ class GoalPublisherConfig:
     goal_y: float = 5.54
 
     display_verbose: bool = True
+
+    window_width: int = 800
+    window_height: int = 700
 
 
 # ---------------------------------------------------------------------
@@ -194,7 +198,11 @@ class FieldWidget(QWidget):
         self.animation_timer.timeout.connect(self.update_ripples)
         self.animation_timer.start(30)
 
-        self.setMinimumSize(420, 420)
+        self.setMinimumSize(250, 250)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
         self.setMouseTracking(True)
 
     def set_bounds(
@@ -216,13 +224,67 @@ class FieldWidget(QWidget):
         self.update()
 
     def field_rect(self) -> QRectF:
-        margin = 30
-        return QRectF(
-            margin,
-            margin,
-            self.width() - 2 * margin,
-            self.height() - 2 * margin,
-        )
+        """
+        Return the drawable field rectangle.
+
+        The field preserves world-coordinate scale:
+            1 unit in x has the same pixel length as 1 unit in y.
+
+        Therefore:
+            drawn_width / drawn_height = x_range / y_range
+        """
+
+        margin = 30.0
+
+        available_width = max(1.0, self.width() - 2.0 * margin)
+        available_height = max(1.0, self.height() - 2.0 * margin)
+
+        x_range = abs(self.maximum_x - self.minimum_x)
+        y_range = abs(self.maximum_y - self.minimum_y)
+
+        if x_range <= 0.0 and y_range <= 0.0:
+            aspect_ratio = 1.0
+        elif y_range <= 0.0:
+            aspect_ratio = 1.0
+        else:
+            aspect_ratio = x_range / y_range
+
+        available_aspect_ratio = available_width / available_height
+
+        if available_aspect_ratio > aspect_ratio:
+            # Available area is too wide; height is limiting.
+            field_height = available_height
+            field_width = field_height * aspect_ratio
+        else:
+            # Available area is too tall; width is limiting.
+            field_width = available_width
+            field_height = field_width / aspect_ratio
+
+        left = (self.width() - field_width) / 2.0
+        top = (self.height() - field_height) / 2.0
+
+        return QRectF(left, top, field_width, field_height)
+
+    def grid_cell_size(self) -> float:
+        """
+        Compute square grid cell size from the smaller world range.
+
+        Formula:
+            cell_size = 10^floor(log10(smaller_range)) / 10
+
+        This ensures grid ticks land on clean multiples of 10^n.
+        """
+
+        x_range = abs(self.maximum_x - self.minimum_x)
+        y_range = abs(self.maximum_y - self.minimum_y)
+
+        smaller_range = min(x_range, y_range)
+
+        if smaller_range <= 0.0:
+            return 1.0
+
+        exponent = math.floor(math.log10(smaller_range))
+        return (10.0 ** exponent) / 10.0
 
     def value_to_pixel(self, x: float, y: float) -> QPointF:
         rect = self.field_rect()
@@ -265,6 +327,59 @@ class FieldWidget(QWidget):
         y = self.minimum_y + y_ratio * (self.maximum_y - self.minimum_y)
 
         return x, y
+
+    def draw_world_grid(self, painter: QPainter, rect: QRectF):
+        """
+        Draw a square grey grid in world coordinates.
+
+        The grid spacing is the same in x and y. Since field_rect()
+        preserves world-coordinate scale, grid cells appear square.
+        """
+
+        cell_size = self.grid_cell_size()
+
+        if cell_size <= 0.0:
+            return
+
+        painter.save()
+        painter.setClipRect(rect)
+        painter.setPen(QPen(QColor(220, 220, 220), 1))
+
+        # Vertical grid lines at multiples of cell_size.
+        first_x = math.ceil(self.minimum_x / cell_size) * cell_size
+        x = first_x
+
+        while x <= self.maximum_x + 1e-9:
+            p1 = self.value_to_pixel(x, self.minimum_y)
+            p2 = self.value_to_pixel(x, self.maximum_y)
+
+            painter.drawLine(
+                int(p1.x()),
+                int(p1.y()),
+                int(p2.x()),
+                int(p2.y())
+            )
+
+            x += cell_size
+
+        # Horizontal grid lines at multiples of cell_size.
+        first_y = math.ceil(self.minimum_y / cell_size) * cell_size
+        y = first_y
+
+        while y <= self.maximum_y + 1e-9:
+            p1 = self.value_to_pixel(self.minimum_x, y)
+            p2 = self.value_to_pixel(self.maximum_x, y)
+
+            painter.drawLine(
+                int(p1.x()),
+                int(p1.y()),
+                int(p2.x()),
+                int(p2.y())
+            )
+
+            y += cell_size
+
+        painter.restore()
 
     def update_goal_from_mouse(
         self,
@@ -356,27 +471,8 @@ class FieldWidget(QWidget):
         painter.setBrush(QBrush(QColor(255, 255, 255)))
         painter.drawRect(rect)
 
-        # Light grid
-        painter.setPen(QPen(QColor(220, 220, 220), 1))
-
-        grid_count = 10
-
-        for i in range(1, grid_count):
-            x = rect.left() + i * rect.width() / grid_count
-            painter.drawLine(
-                int(x),
-                int(rect.top()),
-                int(x),
-                int(rect.bottom())
-            )
-
-            y = rect.top() + i * rect.height() / grid_count
-            painter.drawLine(
-                int(rect.left()),
-                int(y),
-                int(rect.right()),
-                int(y)
-            )
+        # Square world-coordinate grey grid.
+        self.draw_world_grid(painter, rect)
 
         # Boundary labels
         painter.setPen(QPen(QColor(80, 80, 80), 1))
@@ -391,8 +487,7 @@ class FieldWidget(QWidget):
             f'y: {self.minimum_y:g} → {self.maximum_y:g}'
         )
 
-        # Ripples
-        # Clip ripple drawing so the radiation never appears outside the field.
+        # Ripples clipped inside field.
         painter.save()
         painter.setClipRect(rect)
 
@@ -475,9 +570,10 @@ class GoalPublisherWindow(QMainWindow):
         }
 
         self.setWindowTitle('Goal Point Publisher')
+        self.resize(self.config.window_width, self.config.window_height)
 
         self.build_ui()
-        self.apply_live_config_to_main_ui()
+        self.apply_live_config_to_main_ui(resize_window=False)
 
         self.ros_spin_timer = QTimer(self)
         self.ros_spin_timer.timeout.connect(self.spin_ros_once)
@@ -585,7 +681,7 @@ class GoalPublisherWindow(QMainWindow):
         bottom_row.addStretch()
 
         layout.addWidget(self.boundary_status_label)
-        layout.addWidget(field_group)
+        layout.addWidget(field_group, stretch=1)
         layout.addWidget(goal_group)
         layout.addLayout(bottom_row)
 
@@ -698,13 +794,6 @@ class GoalPublisherWindow(QMainWindow):
             raise
 
     def request_gui_shutdown(self):
-        """
-        Stop Qt-side ROS spinning and close the GUI.
-
-        This prevents the Qt timer from repeatedly calling rclpy.spin_once()
-        after the ROS context has already been shut down.
-        """
-
         if self._gui_shutting_down:
             return
 
@@ -769,7 +858,6 @@ class GoalPublisherWindow(QMainWindow):
             float(self.rate_edit.text())
         )
 
-        # Preserve current live goal, clamped into the new boundary.
         self.draft_config.goal_x = self.clamp(
             self.config.goal_x,
             self.draft_config.minimum_x,
@@ -781,13 +869,15 @@ class GoalPublisherWindow(QMainWindow):
             self.draft_config.maximum_y
         )
 
-        # Draft becomes live only here.
+        self.draft_config.window_width = self.width()
+        self.draft_config.window_height = self.height()
+
         self.config = GoalPublisherConfig(**asdict(self.draft_config))
 
-        self.apply_live_config_to_main_ui()
+        self.apply_live_config_to_main_ui(resize_window=False)
         self.stack.setCurrentIndex(self.MAIN_PAGE_INDEX)
 
-    def apply_live_config_to_main_ui(self):
+    def apply_live_config_to_main_ui(self, resize_window: bool = True):
         self.boundary_status_label.setText(
             f'Boundary: '
             f'x=[{self.config.minimum_x}, {self.config.maximum_x}], '
@@ -825,6 +915,9 @@ class GoalPublisherWindow(QMainWindow):
 
         self.node.set_goal(self.config.goal_x, self.config.goal_y)
         self.field_widget.set_goal(self.config.goal_x, self.config.goal_y)
+
+        if resize_window:
+            self.resize(self.config.window_width, self.config.window_height)
 
     # ------------------------------------------------------------------
     # Config validation
@@ -937,6 +1030,8 @@ class GoalPublisherWindow(QMainWindow):
                 goal_x=float(data.get('goal_x', self.config.goal_x)),
                 goal_y=float(data.get('goal_y', self.config.goal_y)),
                 display_verbose=bool(data.get('display_verbose', True)),
+                window_width=int(data.get('window_width', 800)),
+                window_height=int(data.get('window_height', 700)),
             )
 
             if loaded.minimum_x > loaded.maximum_x:
@@ -969,6 +1064,9 @@ class GoalPublisherWindow(QMainWindow):
                 loaded.maximum_y
             )
 
+            loaded.window_width = max(400, loaded.window_width)
+            loaded.window_height = max(400, loaded.window_height)
+
             self.draft_config = loaded
             self.load_draft_config_into_config_ui()
 
@@ -1000,6 +1098,8 @@ class GoalPublisherWindow(QMainWindow):
             goal_x=self.config.goal_x,
             goal_y=self.config.goal_y,
             display_verbose=self.config_verbose_check.isChecked(),
+            window_width=self.width(),
+            window_height=self.height(),
         )
 
         filename, _ = QFileDialog.getSaveFileName(
