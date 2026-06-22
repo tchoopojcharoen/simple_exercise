@@ -19,7 +19,7 @@ setup(
         ),
          (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*')))
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools','PyQt6','PyYAML',],
     zip_safe=True,
     maintainer='pi31415',
     maintainer_email='pi31415@example.com',
